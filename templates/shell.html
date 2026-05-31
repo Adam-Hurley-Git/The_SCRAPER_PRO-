@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
+</head>
+<body>
+  {% set active_project_id = active_project.id if active_project else '' %}
+  <div class="app-shell" x-data="{ running: false }">
+    <aside class="sidebar">
+      <div class="brand">
+        <p class="eyebrow">Scraper Pro</p>
+        <h1>Build Console</h1>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-link {% if active_page == 'map' %}is-active{% endif %}"
+                hx-get="/ui/map?project_id={{ active_project_id }}"
+                hx-target="#main-panel"
+                hx-push-url="/?project_id={{ active_project_id }}">
+          Coverage Map
+        </button>
+        <button class="nav-link {% if active_page == 'pipeline' %}is-active{% endif %}"
+                hx-get="/ui/pipeline?project_id={{ active_project_id }}"
+                hx-target="#main-panel"
+                hx-push-url="/?project_id={{ active_project_id }}">
+          Pipeline
+        </button>
+        <button class="nav-link {% if active_page == 'leads' %}is-active{% endif %}"
+                hx-get="/ui/leads?project_id={{ active_project_id }}"
+                hx-target="#main-panel"
+                hx-push-url="/?project_id={{ active_project_id }}">
+          Leads
+        </button>
+        <button class="nav-link {% if active_page == 'scrapes' %}is-active{% endif %}"
+                hx-get="/ui/scrapes?project_id={{ active_project_id }}"
+                hx-target="#main-panel"
+                hx-push-url="/?project_id={{ active_project_id }}">
+          Raw Scrapes
+        </button>
+      </nav>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Active Project</p>
+          {% if active_project %}
+          <h2>{{ active_project.name }}</h2>
+          <p class="subtle">{{ active_project.primary_term }} · {{ active_project.bbox }}</p>
+          {% else %}
+          <h2>No project yet</h2>
+          <p class="subtle">Create a project via <code>POST /api/projects</code> to begin.</p>
+          {% endif %}
+        </div>
+
+        <div class="topbar-actions">
+          <button class="action-button" type="button" x-text="running ? 'Stop' : 'Run'" @click="running = !running"></button>
+          <span class="status-pill {% if active_project %}status-ready{% else %}status-idle{% endif %}">
+            {% if active_project %}ready{% else %}idle{% endif %}
+          </span>
+        </div>
+      </header>
+
+      <main id="main-panel"
+            class="panel"
+            hx-get="/ui/map?project_id={{ active_project_id }}"
+            hx-trigger="load"
+            hx-swap="innerHTML">
+        <div class="empty-state">
+          <h3>Loading view…</h3>
+        </div>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

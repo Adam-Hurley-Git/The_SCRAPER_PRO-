@@ -1,0 +1,21 @@
+<section class="view">
+  <div class="view-header">
+    <div>
+      <p class="eyebrow">View</p>
+      <h3>Leads</h3>
+    </div>
+    <span class="status-pill status-idle">Awaiting Track C</span>
+  </div>
+
+  {% if active_project %}
+  <article class="hero-card">
+    <h4>Lead table scaffold</h4>
+    <p>This project currently has {{ active_project.lead_count }} persisted leads. Filtering, pagination, and detail panels will land after discovery ingestion exists.</p>
+  </article>
+  {% else %}
+  <div class="empty-state">
+    <h4>No active project</h4>
+    <p>The leads table will populate once a project exists and discovery starts writing records.</p>
+  </div>
+  {% endif %}
+</section>

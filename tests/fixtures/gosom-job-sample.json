@@ -1,0 +1,17 @@
+{
+  "id": "sample-job-1",
+  "status": "complete",
+  "query": "plumbers in Swansea",
+  "results": [
+    {
+      "cid": "1234567890",
+      "title": "Swansea Plumbing Ltd",
+      "phone": "01792 123456",
+      "website": "https://example.com",
+      "address": "14 Wind Street, Swansea, SA1 1DP",
+      "latitude": 51.6193,
+      "longitude": -3.9437,
+      "category": "Plumber"
+    }
+  ]
+}

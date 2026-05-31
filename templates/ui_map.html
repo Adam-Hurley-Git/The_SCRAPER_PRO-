@@ -1,0 +1,35 @@
+<section class="view">
+  <div class="view-header">
+    <div>
+      <p class="eyebrow">View</p>
+      <h3>Coverage Map</h3>
+    </div>
+    <span class="status-pill status-idle">Phase 1 pending</span>
+  </div>
+
+  {% if active_project %}
+  <div class="card-grid">
+    <article class="card">
+      <h4>Bounding Box</h4>
+      <p>{{ active_project.bbox }}</p>
+    </article>
+    <article class="card">
+      <h4>Coverage Cells</h4>
+      <p>{{ active_project.cell_count }}</p>
+    </article>
+    <article class="card">
+      <h4>Leads Found</h4>
+      <p>{{ active_project.lead_count }}</p>
+    </article>
+  </div>
+  <article class="hero-card">
+    <h4>Track B UI shell is live</h4>
+    <p>The map view is now wired into the application shell. Leaflet coverage rendering lands in Track C alongside the coverage endpoints.</p>
+  </article>
+  {% else %}
+  <div class="empty-state">
+    <h4>No active project</h4>
+    <p>Create a project through the API first. This view will then bind to its bbox and coverage cells.</p>
+  </div>
+  {% endif %}
+</section>
