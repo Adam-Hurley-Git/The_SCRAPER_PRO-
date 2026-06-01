@@ -26,10 +26,12 @@ from database import (
     count_pending_companies_house_leads,
     count_pending_smtp_leads,
     count_pending_website_leads,
+    get_phase2_status,
     mark_lead_website_failed,
     reset_running_companies_house_leads,
     reset_running_smtp_leads,
     reset_running_website_leads,
+    retry_failed_leads_for_stage,
     update_lead_companies_house_enrichment,
     update_lead_smtp_enrichment,
     update_lead_website_enrichment,
@@ -1879,4 +1881,98 @@ def run_smtp_stage(
         "processed": processed,
         "failed": failed,
         "remaining": count_pending_smtp_leads(project_id, db_path),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 orchestrator (D7)
+# ---------------------------------------------------------------------------
+
+PHASE2_STAGE_COLUMNS = (
+    "website_status",
+    "companies_house_status",
+    "smtp_status",
+)
+
+
+def run_phase2_all_stages(
+    project_id: str,
+    *,
+    db_path: str,
+    # Injectable dependencies for testing
+    fetcher: Any | None = None,
+    ai_extractor: Any | None = None,
+    whois_lookup: Any | None = None,
+    mx_lookup: Any | None = None,
+    search_lookup: Any | None = None,
+    profile_lookup: Any | None = None,
+    officers_lookup: Any | None = None,
+    psc_lookup: Any | None = None,
+    smtp_prober: Any | None = None,
+    batch_limit: int = 25,
+) -> dict[str, Any]:
+    """Run all Phase 2 stages in sequence for a project.
+
+    Each stage is resumable: stranded 'running' rows are reset to 'pending'
+    at the start of that stage's runner. 'retry' rows are also picked up.
+
+    Returns a combined summary with per-stage result counts.
+    """
+    website_result = run_phase2(
+        project_id,
+        db_path=db_path,
+        fetcher=fetcher,
+        ai_extractor=ai_extractor,
+        whois_lookup=whois_lookup,
+        mx_lookup=mx_lookup,
+        batch_limit=batch_limit,
+    )
+    ch_result = run_companies_house_stage(
+        project_id,
+        db_path=db_path,
+        search_lookup=search_lookup,
+        profile_lookup=profile_lookup,
+        officers_lookup=officers_lookup,
+        psc_lookup=psc_lookup,
+        batch_limit=batch_limit,
+    )
+    smtp_result = run_smtp_stage(
+        project_id,
+        db_path=db_path,
+        smtp_prober=smtp_prober,
+        batch_limit=batch_limit,
+    )
+    return {
+        "project_id": project_id,
+        "phase": "2",
+        "website": website_result,
+        "companies_house": ch_result,
+        "smtp": smtp_result,
+        "status": get_phase2_status(project_id, db_path),
+    }
+
+
+def retry_phase2_stage(
+    project_id: str,
+    stage: str,
+    *,
+    db_path: str,
+) -> dict[str, Any]:
+    """Re-queue all failed leads for one Phase 2 stage, then run that stage.
+
+    stage must be one of: 'website', 'companies_house', 'smtp'.
+    """
+    stage_to_column = {
+        "website": "website_status",
+        "companies_house": "companies_house_status",
+        "smtp": "smtp_status",
+    }
+    if stage not in stage_to_column:
+        raise ValueError(f"Unknown stage: {stage!r}. Must be one of {list(stage_to_column)}")
+    retried = retry_failed_leads_for_stage(project_id, stage_to_column[stage], db_path)
+    return {
+        "project_id": project_id,
+        "stage": stage,
+        "retried": retried,
+        "status": get_phase2_status(project_id, db_path),
     }

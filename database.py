@@ -441,6 +441,59 @@ def insert_leads_from_gosom_results(
     return {"inserted": inserted, "duplicates": duplicates}
 
 
+def get_phase2_status(project_id: str, db_path: str | Path | None = None) -> dict[str, Any]:
+    """Return per-stage lead counts for the Phase 2 pipeline dashboard."""
+    stages = ("website_status", "ai_fallback_status", "whois_mx_status", "companies_house_status", "smtp_status")
+    status: dict[str, Any] = {}
+    with get_connection(db_path) as conn:
+        for stage_col in stages:
+            rows = conn.execute(
+                f"""
+                SELECT {stage_col} AS stage_status, COUNT(*) AS lead_count
+                FROM leads
+                WHERE project_id = ?
+                GROUP BY {stage_col}
+                """,
+                (project_id,),
+            ).fetchall()
+            status[stage_col] = {row["stage_status"]: row["lead_count"] for row in rows}
+        total_row = conn.execute(
+            "SELECT COUNT(*) AS total FROM leads WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()
+    status["total_leads"] = int(total_row["total"]) if total_row else 0
+    return status
+
+
+def retry_failed_leads_for_stage(
+    project_id: str,
+    stage_column: str,
+    db_path: str | Path | None = None,
+) -> int:
+    """Re-queue all failed leads for one Phase 2 stage column into 'retry'."""
+    allowed = {
+        "website_status",
+        "ai_fallback_status",
+        "whois_mx_status",
+        "companies_house_status",
+        "smtp_status",
+    }
+    if stage_column not in allowed:
+        raise ValueError(f"Unknown stage column: {stage_column!r}")
+    with get_connection(db_path) as conn:
+        cursor = conn.execute(
+            f"""
+            UPDATE leads
+            SET {stage_column} = 'retry',
+                last_updated = ?
+            WHERE project_id = ? AND {stage_column} = 'failed'
+            """,
+            (utc_now_iso(), project_id),
+        )
+        conn.commit()
+    return cursor.rowcount
+
+
 def list_leads_for_website_enrichment(
     project_id: str,
     db_path: str | Path | None = None,
