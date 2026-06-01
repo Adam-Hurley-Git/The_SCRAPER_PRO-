@@ -57,18 +57,17 @@ Current confirmed position:
 - broad live cap-hit probes can exceed the earlier 300s local wait window; the gosom client timeout policy has been adjusted accordingly
 - application scaffold, env contract, SQLite bootstrap, first tests, project CRUD API, UI shell, Phase 1 gosom wiring, coverage queue logic, lead ingestion, coverage endpoints, live map UI hooks, a completed deterministic website stage, AI fallback stage, and WHOIS/MX stage now exist
 
-**Last fully completed task:** `Track F -> Task F2 — Pipeline run logging`
+**Last fully completed task:** `Track D -> Task D11 — Phase 2 verification suite`
 
 **Canonical next task:** `Track G -> Task G1 — Environment bring-up`
 
 **Current build block to finish before moving on:**
 
-1. `C6` — Phase 1 verification (background verification only)
-2. `D11` — Phase 2 verification suite  
-3. `G1` — Environment bring-up
-4. `G2` — Automated tests (comprehensive)
-5. `G3` — Real integration test (end-to-end live run)
-6. `G4` — Documentation closeout
+1. `C6` — Phase 1 verification (background verification only; non-blocking)
+2. `G1` — Environment bring-up (requires user action: gosom Docker + API keys)
+3. `G2` — Automated tests comprehensive review
+4. `G3` — Real integration test (end-to-end live run: Phase 1 → 2 → 3 → leads.xlsx)
+5. `G4` — Documentation closeout
 
 **Current stop point rule for future sessions:** when a session ends, update this section with the exact last completed task and the exact next task. Do not leave the finish point implicit.
 
@@ -128,7 +127,7 @@ This file is the **execution plan**, not a replacement for those specs.
 - `D8` — Indexed scalar extraction
 - `D9` — Phase 2 endpoints
 - `D10` — Phase 2 UI
-- `D11` — Phase 2 verification suite *(pending)*
+- `D11` — Phase 2 verification suite
 
 ### Track E Completed
 

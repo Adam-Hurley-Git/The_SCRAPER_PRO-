@@ -23,11 +23,11 @@ This session completed the full v1 feature build: Phases 1, 2, and 3 are all imp
 
 **F1+F2 — Full pipeline orchestration + run logging:** `run_full_pipeline()` chains Phase 1 → 2 → 3 with per-phase `pipeline_runs` rows; `POST /api/projects/{id}/run`, `/stop`, `GET /runs`; 8 tests pass.
 
-**Total new tests this session: 86** (D5 through F2). All 86 pass.
+**Total new tests this session: 95** (D5 through F2 + D11). All 95 pass.
 
-**Last fully completed task:** `F2 — Pipeline run logging`
+**Last fully completed task:** `D11 — Phase 2 verification suite`
 
-**Exact stop point for this handoff:** All v1 code is implemented. The next work is validation and ops: G1 (environment bring-up), G2 (automated test suite review), G3 (real integration test), G4 (docs closeout). D11 (Phase 2 verification suite) is also open.
+**Exact stop point for this handoff:** All v1 code is implemented and all tasks through D11 are complete. The next work is validation and ops: G1 (environment bring-up), G3 (real integration test), G4 (docs closeout). These require user action to bring up the live environment.
 
 ---
 
@@ -42,15 +42,14 @@ All v1 phases are implemented and test-green:
 | A (Foundation) | A1–A4 | ✅ Complete |
 | B (Core API/UI) | B1–B2 | ✅ Complete |
 | C (Phase 1) | C1–C5 | ✅ Complete |
-| D (Phase 2) | D1–D10 | ✅ Complete |
+| D (Phase 2) | D1–D11 | ✅ Complete |
 | E (Phase 3) | E1–E6 | ✅ Complete |
 | F (Orchestration) | F1–F2 | ✅ Complete |
 
 ### What is still open
 
-- `C6` — Live cap-hit subdivision proof (non-blocking background verification)
-- `D11` — Phase 2 verification suite (controlled sample set)
-- `G1` — Environment bring-up check
+- `C6` — Live cap-hit subdivision proof (non-blocking; real completion and ingestion already proven)
+- `G1` — Environment bring-up (gosom Docker + API keys — requires user action)
 - `G2` — Automated test suite review
 - `G3` — Real end-to-end integration test (Phase 1 → 2 → 3 → `leads.xlsx`)
 - `G4` — Documentation closeout
@@ -74,8 +73,7 @@ All v1 phases are implemented and test-green:
 
 1. **G1**: Verify environment (gosom Docker running, API keys set, Python deps installed)
 2. **G3**: Run a real end-to-end project: create project → Phase 1 discovery → Phase 2 enrichment → Phase 3 export → verify `leads.xlsx` opens correctly
-3. **D11**: Review enrichment results against the 7 sample scenarios in the spec
-4. **G4**: Update `docs/agent/AGENT.md` and docs with final state
+3. **G4**: Update `docs/agent/AGENT.md` and docs with final state
 
 ### Required User Action
 
