@@ -441,6 +441,73 @@ def insert_leads_from_gosom_results(
     return {"inserted": inserted, "duplicates": duplicates}
 
 
+def start_pipeline_run(
+    project_id: str,
+    phase: int,
+    db_path: str | Path | None = None,
+) -> str:
+    """Insert a pipeline_run row and return its id."""
+    run_id = str(uuid.uuid4())
+    with get_connection(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO pipeline_runs (
+                id, project_id, phase, stage, status,
+                records_total, records_done, records_failed,
+                started_at, completed_at
+            )
+            VALUES (?, ?, ?, NULL, 'running', 0, 0, 0, ?, NULL)
+            """,
+            (run_id, project_id, phase, utc_now_iso()),
+        )
+        conn.commit()
+    return run_id
+
+
+def complete_pipeline_run(
+    run_id: str,
+    *,
+    status: str = "done",
+    records_total: int = 0,
+    records_done: int = 0,
+    records_failed: int = 0,
+    db_path: str | Path | None = None,
+) -> None:
+    with get_connection(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE pipeline_runs
+            SET status = ?,
+                records_total = ?,
+                records_done = ?,
+                records_failed = ?,
+                completed_at = ?
+            WHERE id = ?
+            """,
+            (status, records_total, records_done, records_failed, utc_now_iso(), run_id),
+        )
+        conn.commit()
+
+
+def list_pipeline_runs(
+    project_id: str,
+    db_path: str | Path | None = None,
+    *,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    with get_connection(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM pipeline_runs
+            WHERE project_id = ?
+            ORDER BY started_at DESC, id DESC
+            LIMIT ?
+            """,
+            (project_id, limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def get_phase2_status(project_id: str, db_path: str | Path | None = None) -> dict[str, Any]:
     """Return per-stage lead counts for the Phase 2 pipeline dashboard."""
     stages = ("website_status", "ai_fallback_status", "whois_mx_status", "companies_house_status", "smtp_status")

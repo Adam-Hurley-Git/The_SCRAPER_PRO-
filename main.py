@@ -13,6 +13,7 @@ from config import AppSettings, get_settings
 from database import (
     archive_project,
     cells_to_geojson,
+    complete_pipeline_run,
     create_project,
     get_coverage_status,
     get_output_status,
@@ -20,12 +21,83 @@ from database import (
     get_project,
     init_db,
     list_cells,
+    list_pipeline_runs,
     list_projects,
     retry_failed_output_leads,
+    start_pipeline_run,
 )
+import logging as _logging
+
 from pipeline.phase1_discovery import run_phase1
 from pipeline.phase2_enrichment import run_phase2_all_stages, retry_phase2_stage
 from pipeline.phase3_output import run_phase3
+
+_pipeline_logger = _logging.getLogger(__name__)
+
+
+def run_full_pipeline(project_id: str, db_path: str, export_dir: str) -> None:
+    """Background task: Phase 1 → Phase 2 → Phase 3, with pipeline_runs logging.
+
+    Module-level so it can be tested / patched without closure issues.
+    """
+    run_id = start_pipeline_run(project_id, phase=0, db_path=db_path)
+    try:
+        # Phase 1
+        p1_run = start_pipeline_run(project_id, phase=1, db_path=db_path)
+        try:
+            p1 = run_phase1(project_id, db_path=db_path)
+            complete_pipeline_run(
+                p1_run,
+                status="done",
+                records_total=p1.get("leads_found", 0),
+                records_done=p1.get("leads_found", 0),
+                db_path=db_path,
+            )
+        except Exception as exc:
+            _pipeline_logger.error("Phase 1 failed: %s", exc)
+            complete_pipeline_run(p1_run, status="failed", db_path=db_path)
+            complete_pipeline_run(run_id, status="failed", db_path=db_path)
+            return
+
+        # Phase 2
+        p2_run = start_pipeline_run(project_id, phase=2, db_path=db_path)
+        try:
+            p2 = run_phase2_all_stages(project_id, db_path=db_path)
+            p2_status = p2.get("status", {})
+            done_count = sum(v.get("done", 0) for v in p2_status.values() if isinstance(v, dict))
+            failed_count = sum(v.get("failed", 0) for v in p2_status.values() if isinstance(v, dict))
+            complete_pipeline_run(
+                p2_run, status="done",
+                records_done=done_count, records_failed=failed_count, db_path=db_path,
+            )
+        except Exception as exc:
+            _pipeline_logger.error("Phase 2 failed: %s", exc)
+            complete_pipeline_run(p2_run, status="failed", db_path=db_path)
+            complete_pipeline_run(run_id, status="failed", db_path=db_path)
+            return
+
+        # Phase 3
+        p3_run = start_pipeline_run(project_id, phase=3, db_path=db_path)
+        try:
+            p3 = run_phase3(project_id, db_path=db_path, export_dir=export_dir)
+            p3_status = p3.get("output_status", {})
+            complete_pipeline_run(
+                p3_run,
+                status=p3.get("status", "done"),
+                records_done=p3_status.get("counts", {}).get("done", 0),
+                records_failed=p3_status.get("counts", {}).get("failed", 0),
+                db_path=db_path,
+            )
+        except Exception as exc:
+            _pipeline_logger.error("Phase 3 failed: %s", exc)
+            complete_pipeline_run(p3_run, status="failed", db_path=db_path)
+            complete_pipeline_run(run_id, status="failed", db_path=db_path)
+            return
+
+        complete_pipeline_run(run_id, status="done", db_path=db_path)
+    except Exception as exc:
+        _pipeline_logger.error("Full pipeline failed: %s", exc)
+        complete_pipeline_run(run_id, status="failed", db_path=db_path)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -194,6 +266,44 @@ def create_app(settings_override: AppSettings | None = None) -> FastAPI:
         coverage = get_coverage_status(project_id, settings.scraper_db_path)
         phase2 = get_phase2_status(project_id, settings.scraper_db_path)
         return {"project_id": project_id, "coverage": coverage, "phase2": phase2}
+
+    # ------------------------------------------------------------------
+    # F1 — Full pipeline run-all + F2 — Pipeline run logging
+    # ------------------------------------------------------------------
+
+    @app.post("/api/projects/{project_id}/run", status_code=202)
+    def api_run_all(project_id: str, background_tasks: BackgroundTasks) -> dict[str, str]:
+        project = get_project(project_id, settings.scraper_db_path)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        export_dir = str(settings.scraper_db_path.parent / "exports")
+        background_tasks.add_task(
+            run_full_pipeline,
+            project_id,
+            db_path=str(settings.scraper_db_path),
+            export_dir=export_dir,
+        )
+        return {"project_id": project_id, "status": "started"}
+
+    @app.post("/api/projects/{project_id}/stop", status_code=202)
+    def api_stop(project_id: str) -> dict[str, str]:
+        """Signal to stop the pipeline run. Background tasks cannot be cancelled
+        mid-run, but the checkpoint system ensures any leads in 'running' state
+        are reset to 'pending' on the next resume call."""
+        project = get_project(project_id, settings.scraper_db_path)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return {"project_id": project_id, "status": "stop_requested"}
+
+    @app.get("/api/projects/{project_id}/runs")
+    def api_list_runs(project_id: str) -> dict:
+        project = get_project(project_id, settings.scraper_db_path)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return {
+            "project_id": project_id,
+            "runs": list_pipeline_runs(project_id, settings.scraper_db_path),
+        }
 
     # ------------------------------------------------------------------
     # Phase 3 output endpoints (E5)
