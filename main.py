@@ -15,14 +15,17 @@ from database import (
     cells_to_geojson,
     create_project,
     get_coverage_status,
+    get_output_status,
     get_phase2_status,
     get_project,
     init_db,
     list_cells,
     list_projects,
+    retry_failed_output_leads,
 )
 from pipeline.phase1_discovery import run_phase1
 from pipeline.phase2_enrichment import run_phase2_all_stages, retry_phase2_stage
+from pipeline.phase3_output import run_phase3
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -191,6 +194,63 @@ def create_app(settings_override: AppSettings | None = None) -> FastAPI:
         coverage = get_coverage_status(project_id, settings.scraper_db_path)
         phase2 = get_phase2_status(project_id, settings.scraper_db_path)
         return {"project_id": project_id, "coverage": coverage, "phase2": phase2}
+
+    # ------------------------------------------------------------------
+    # Phase 3 output endpoints (E5)
+    # ------------------------------------------------------------------
+
+    @app.post("/api/projects/{project_id}/phases/3/run", status_code=202)
+    def api_phase3_run(project_id: str, background_tasks: BackgroundTasks) -> dict[str, str]:
+        project = get_project(project_id, settings.scraper_db_path)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        export_dir = settings.scraper_db_path.parent / "exports"
+        background_tasks.add_task(
+            run_phase3,
+            project_id,
+            db_path=settings.scraper_db_path,
+            export_dir=export_dir,
+        )
+        return {"project_id": project_id, "status": "started"}
+
+    @app.post("/api/projects/{project_id}/phases/3/resume", status_code=202)
+    def api_phase3_resume(project_id: str, background_tasks: BackgroundTasks) -> dict[str, str]:
+        project = get_project(project_id, settings.scraper_db_path)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        export_dir = settings.scraper_db_path.parent / "exports"
+        background_tasks.add_task(
+            run_phase3,
+            project_id,
+            db_path=settings.scraper_db_path,
+            export_dir=export_dir,
+        )
+        return {"project_id": project_id, "status": "resuming"}
+
+    @app.get("/api/projects/{project_id}/leads/export")
+    def api_leads_export(project_id: str) -> JSONResponse:
+        from fastapi.responses import FileResponse
+        project = get_project(project_id, settings.scraper_db_path)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        export_path = settings.scraper_db_path.parent / "exports" / f"{project_id}_leads.xlsx"
+        if not export_path.exists():
+            raise HTTPException(status_code=404, detail="Export not yet generated. Run Phase 3 first.")
+        return FileResponse(
+            path=str(export_path),
+            filename=f"leads_{project_id[:8]}.xlsx",
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    @app.get("/api/projects/{project_id}/phases/3/status")
+    def api_phase3_status(project_id: str) -> dict:
+        project = get_project(project_id, settings.scraper_db_path)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return {
+            "project_id": project_id,
+            "output_status": get_output_status(project_id, settings.scraper_db_path),
+        }
 
     @app.get("/ui/map", response_class=HTMLResponse)
     def ui_map(

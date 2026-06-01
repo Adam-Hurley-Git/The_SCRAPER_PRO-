@@ -494,6 +494,133 @@ def retry_failed_leads_for_stage(
     return cursor.rowcount
 
 
+def list_output_pending_leads(
+    project_id: str,
+    db_path: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    """Return all leads ready for Phase 3 output (output_status pending or retry)."""
+    with get_connection(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM leads
+            WHERE project_id = ?
+              AND output_status IN ('pending', 'retry')
+            ORDER BY last_updated ASC, id ASC
+            """,
+            (project_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def reset_running_output_leads(project_id: str, db_path: str | Path | None = None) -> int:
+    with get_connection(db_path) as conn:
+        cursor = conn.execute(
+            """
+            UPDATE leads
+            SET output_status = 'pending',
+                last_updated = ?
+            WHERE project_id = ? AND output_status = 'running'
+            """,
+            (utc_now_iso(), project_id),
+        )
+        conn.commit()
+    return cursor.rowcount
+
+
+def mark_leads_output_done(
+    lead_ids: list[str],
+    db_path: str | Path | None = None,
+) -> int:
+    if not lead_ids:
+        return 0
+    placeholders = ",".join("?" for _ in lead_ids)
+    with get_connection(db_path) as conn:
+        cursor = conn.execute(
+            f"""
+            UPDATE leads
+            SET output_status = 'done',
+                last_updated = ?
+            WHERE id IN ({placeholders})
+            """,
+            [utc_now_iso(), *lead_ids],
+        )
+        conn.commit()
+    return cursor.rowcount
+
+
+def mark_leads_output_failed(
+    lead_ids: list[str],
+    db_path: str | Path | None = None,
+) -> int:
+    if not lead_ids:
+        return 0
+    placeholders = ",".join("?" for _ in lead_ids)
+    with get_connection(db_path) as conn:
+        cursor = conn.execute(
+            f"""
+            UPDATE leads
+            SET output_status = 'failed',
+                last_updated = ?
+            WHERE id IN ({placeholders})
+            """,
+            [utc_now_iso(), *lead_ids],
+        )
+        conn.commit()
+    return cursor.rowcount
+
+
+def get_output_status(project_id: str, db_path: str | Path | None = None) -> dict[str, Any]:
+    with get_connection(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT output_status AS status, COUNT(*) AS count
+            FROM leads
+            WHERE project_id = ?
+            GROUP BY output_status
+            """,
+            (project_id,),
+        ).fetchall()
+        total = conn.execute(
+            "SELECT COUNT(*) AS total FROM leads WHERE project_id = ?", (project_id,)
+        ).fetchone()
+    return {
+        "counts": {row["status"]: row["count"] for row in rows},
+        "total": int(total["total"]) if total else 0,
+    }
+
+
+def retry_failed_output_leads(project_id: str, db_path: str | Path | None = None) -> int:
+    with get_connection(db_path) as conn:
+        cursor = conn.execute(
+            """
+            UPDATE leads
+            SET output_status = 'retry',
+                last_updated = ?
+            WHERE project_id = ? AND output_status = 'failed'
+            """,
+            (utc_now_iso(), project_id),
+        )
+        conn.commit()
+    return cursor.rowcount
+
+
+def check_duplicate_cids(project_id: str, db_path: str | Path | None = None) -> list[str]:
+    """Return a list of CIDs that appear more than once in the project (should be empty)."""
+    with get_connection(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT cid, COUNT(*) AS count
+            FROM leads
+            WHERE project_id = ?
+            GROUP BY cid
+            HAVING COUNT(*) > 1
+            """,
+            (project_id,),
+        ).fetchall()
+    return [row["cid"] for row in rows]
+
+
 def list_leads_for_website_enrichment(
     project_id: str,
     db_path: str | Path | None = None,
