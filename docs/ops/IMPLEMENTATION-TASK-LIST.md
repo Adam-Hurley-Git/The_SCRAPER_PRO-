@@ -16,19 +16,59 @@ This document converts the agreed design into a concrete build sequence that an 
 Current confirmed position:
 
 - planning/spec alignment is complete
-- `A1`, `A2`, `A3`, `A4`, `B1`, and `B2` are complete
-- application scaffold, env contract, SQLite bootstrap, first tests, project CRUD API, and UI shell now exist
+- `A1`, `A2`, `A3`, `A4`, `B1`, `B2`, `C1`, `C2`, `C3`, and `C4` are complete
+- `C5` is complete: the live UI now reflects a real gosom-backed run entering `running` state through the app path
+- `D1` is complete: typed enrichment record models and fixture validation now exist
+- `D2` is complete:
+  - deterministic extraction helpers cover emails, phones, JSON-LD, contact links, and conservative person-name heuristics
+  - the website stage persists `enrichment_data`, `primary_email`, `primary_phone`, `primary_person`, `outreach_ready`, homepage `web.url_final`, `web.status`, and `response_time_ms`
+  - website-stage state flow supports reset, atomic claim, `done/failed`, and `failed -> retry`
+  - the HTTP client now falls back cleanly to HTTP/1.1 when `httpx[http2]` support is unavailable locally
+  - a repo-local live proof tool now exists at `tools/live_phase2_probe.py`
+  - live end-to-end proof exists against a real site:
+    - `run_phase2(...)` completed successfully for `https://www.greek-flavours.com/`
+    - captured output included `website_status='done'`, `primary_email='info@greek-flavours.com'`, `primary_phone='01792381143'`, `primary_person=null`, and `remaining=0`
+- `D3` is complete:
+  - AI fallback runs only when deterministic extraction still misses `email`, `phone`, or `person name`
+  - the fallback input now contains cleaned homepage/contact-page text, metadata, and deterministic partial results
+  - AI-returned values are accepted only when they include evidence with `snippet + page_source`
+  - unevidenced output is discarded
+  - if the AI call fails, deterministic website-stage results are preserved and only `ai_fallback_status` degrades
+  - direct Groq API support is now wired, with `GROQ_API_KEY` and `GROQ_MODEL`
+  - controlled tests now prove:
+    - fallback can recover a missing field with evidence
+    - unevidenced output is rejected
+    - AI failure does not collapse the deterministic website stage
+- `D4` is complete:
+  - domain extraction now derives the host from `web.url_final`
+  - WHOIS lookup now writes `web.whois_owner`, `web.domain_registered`, and `web.domain_expires`
+  - MX lookup now writes `emails[*].mx_valid`
+  - syntax-valid emails are promoted from `confidence='low'` to `confidence='medium'` only when MX is confirmed
+  - `whois_mx_status` is now persisted for the stage
+  - `requirements.txt` now includes `python-whois`
+  - controlled tests now prove expected WHOIS and MX values on known domains
+  - live end-to-end proof exists against a real site:
+    - `data/live_phase4_probe.json` shows `whois_mx_status='done'` for `https://www.greek-flavours.com/`
+    - the captured output includes `mx_valid=true`, `confidence='medium'`, `whois_owner='REDACTED FOR PRIVACY'`, `domain_registered='2025-07-19'`, and `domain_expires='2026-07-19'`
+- `C6` remains open, but it is now intentionally non-blocking:
+  - real completion and lead ingestion are already proven
+  - live cap-hit subdivision is still not yet proven
+  - the dense London background verification run under project `57ab8ce3-3468-4f3a-ada7-764f2ab83cde` finished `failed` without yielding cap-hit evidence
+- broad live cap-hit probes can exceed the earlier 300s local wait window; the gosom client timeout policy has been adjusted accordingly
+- application scaffold, env contract, SQLite bootstrap, first tests, project CRUD API, UI shell, Phase 1 gosom wiring, coverage queue logic, lead ingestion, coverage endpoints, live map UI hooks, a completed deterministic website stage, AI fallback stage, and WHOIS/MX stage now exist
 
-**Last completed task:** `Track B -> Task B2 — UI shell and navigation`
+**Last fully completed task:** `Track F -> Task F2 — Pipeline run logging`
 
-**Canonical next task:** `Track C -> Task C1 — gosom REST client`
+**Canonical next task:** `Track G -> Task G1 — Environment bring-up`
 
 **Current build block to finish before moving on:**
 
-1. `C1` — gosom REST client
-2. `C2` — Coverage cell model and queue logic
-3. `C3` — Lead ingestion and dedup
-4. `C4` — Coverage endpoints
+1. `C6` — Phase 1 verification (background verification only)
+2. `D11` — Phase 2 verification suite  
+3. `G1` — Environment bring-up
+4. `G2` — Automated tests (comprehensive)
+5. `G3` — Real integration test (end-to-end live run)
+6. `G4` — Documentation closeout
 
 **Current stop point rule for future sessions:** when a session ends, update this section with the exact last completed task and the exact next task. Do not leave the finish point implicit.
 
@@ -67,6 +107,42 @@ This file is the **execution plan**, not a replacement for those specs.
 
 - `B1` — Project CRUD API
 - `B2` — UI shell and navigation
+
+### Track C Completed
+
+- `C1` — gosom REST client
+- `C2` — Coverage cell model and queue logic
+- `C3` — Lead ingestion and dedup
+- `C4` — Coverage endpoints
+- `C5` — Phase 1 UI
+
+### Track D Completed
+
+- `D1` — Enrichment record schema in code
+- `D2` — Deterministic website extraction
+- `D3` — AI fallback integration
+- `D4` — WHOIS and MX stage
+- `D5` — Companies House stage
+- `D6` — SMTP verification stage
+- `D7` — Phase 2 checkpoint engine
+- `D8` — Indexed scalar extraction
+- `D9` — Phase 2 endpoints
+- `D10` — Phase 2 UI
+- `D11` — Phase 2 verification suite *(pending)*
+
+### Track E Completed
+
+- `E1` — Postcodes.io bulk lookup
+- `E2` — Phone normalisation
+- `E3` — Final dedup confirmation
+- `E4` — XLSX export
+- `E5` — Phase 3 endpoints and UI
+- `E6` — Phase 3 verification
+
+### Track F Completed
+
+- `F1` — Run-all orchestration
+- `F2` — Pipeline run logging
 
 ---
 

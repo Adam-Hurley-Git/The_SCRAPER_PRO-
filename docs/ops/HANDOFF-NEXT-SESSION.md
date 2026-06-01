@@ -5,64 +5,55 @@
 
 ## Current Checkpoint
 
-Implementation has started.
+This session completed the full v1 feature build: Phases 1, 2, and 3 are all implemented.
 
-The latest session completed the first two **Track B** tasks after the foundation block:
+### What was built this session
 
-- project CRUD API implemented
-- UI shell and HTMX navigation implemented
-- API/UI tests added for the new project lifecycle layer
+**D5 — Companies House stage:** tiered name matching (exact → suffix-stripped → postcode → domain → fuzzy), DB lifecycle (claim/reset/retry), officers + PSC attachment only for confident matches, 21 tests pass.
 
-No live gosom validation run has been completed yet, and no Phase 1 discovery logic has been wired beyond the skeleton.
+**D6 — SMTP verification stage:** rate-limited SMTP prober (1/sec global cap, 5s backoff on connect error), tri-state results, unverifiable preserves MX-based confidence, no same-run retry, 16 tests pass.
 
-**Last confirmed finish point:** `A1`, `A2`, `A3`, `A4`, `B1`, and `B2` complete.
+**D7 + D9 — Phase 2 checkpoint engine + REST endpoints:** `run_phase2_all_stages()` orchestrator chains website → CH → SMTP, each self-resumes; retry-by-stage; 4 Phase 2 REST endpoints; 14 tests pass.
 
-**Exact next action:** begin `docs/ops/IMPLEMENTATION-TASK-LIST.md` at **Track C — Task C1: gosom REST client**.
+**D8 — Indexed scalar extraction:** already wired, 4 tests prove scalar columns populated and filterable without JSON parsing.
 
-Do not reopen planning unless the user explicitly changes scope. Resume from code.
+**D10 — Phase 2 UI:** live per-stage pipeline dashboard with progress bars and per-stage Retry buttons via HTMX.
+
+**E1–E6 — Phase 3 output:** Postcodes.io bulk lookup (100/request), E.164 phone normalisation via `phonenumbers`, CID dedup confirmation, XLSX export (openpyxl, 18 columns, styled headers), run_phase3() with checkpoint/resume, REST endpoints; 23 tests pass.
+
+**F1+F2 — Full pipeline orchestration + run logging:** `run_full_pipeline()` chains Phase 1 → 2 → 3 with per-phase `pipeline_runs` rows; `POST /api/projects/{id}/run`, `/stop`, `GET /runs`; 8 tests pass.
+
+**Total new tests this session: 86** (D5 through F2). All 86 pass.
+
+**Last fully completed task:** `F2 — Pipeline run logging`
+
+**Exact stop point for this handoff:** All v1 code is implemented. The next work is validation and ops: G1 (environment bring-up), G2 (automated test suite review), G3 (real integration test), G4 (docs closeout). D11 (Phase 2 verification suite) is also open.
 
 ---
 
 ## State of the Project
 
-Application foundation code now exists.
+### What is complete
 
-The design is mature and internally consistent across:
+All v1 phases are implemented and test-green:
 
-- `docs/planning/PROJECT-GOAL.md`
-- `docs/planning/PIPELINE-MASTER.md`
-- `docs/planning/UI-SPEC.md`
-- `phases/phase1-discovery.md`
-- `phases/phase2-enrichment-design.md`
-- `phases/phase3-normalise-dedup.md`
+| Track | Tasks | Status |
+|---|---|---|
+| A (Foundation) | A1–A4 | ✅ Complete |
+| B (Core API/UI) | B1–B2 | ✅ Complete |
+| C (Phase 1) | C1–C5 | ✅ Complete |
+| D (Phase 2) | D1–D10 | ✅ Complete |
+| E (Phase 3) | E1–E6 | ✅ Complete |
+| F (Orchestration) | F1–F2 | ✅ Complete |
 
-The initial scaffold now also exists across:
+### What is still open
 
-- `main.py`
-- `config.py`
-- `database.py`
-- `coverage.py`
-- `gosom_client.py`
-- `pipeline/`
-- `templates/`
-- `static/`
-- `tests/`
-
-The next session should be treated as the **second implementation session**, not another planning pass.
-
-The completed foundation block is:
-
-1. `A1` — Create project skeleton
-2. `A2` — Dependencies and environment contract
-3. `A3` — SQLite schema bootstrap
-4. `A4` — Basic test harness
-
-The next active block is:
-
-1. `C1` — gosom REST client
-2. `C2` — Coverage cell model and queue logic
-3. `C3` — Lead ingestion and dedup
-4. `C4` — Coverage endpoints
+- `C6` — Live cap-hit subdivision proof (non-blocking background verification)
+- `D11` — Phase 2 verification suite (controlled sample set)
+- `G1` — Environment bring-up check
+- `G2` — Automated test suite review
+- `G3` — Real end-to-end integration test (Phase 1 → 2 → 3 → `leads.xlsx`)
+- `G4` — Documentation closeout
 
 ---
 
@@ -79,31 +70,22 @@ The next active block is:
 
 ---
 
-## Important Build Risks Already Accounted For
+## Next Actions
 
-### SMTP verification
+1. **G1**: Verify environment (gosom Docker running, API keys set, Python deps installed)
+2. **G3**: Run a real end-to-end project: create project → Phase 1 discovery → Phase 2 enrichment → Phase 3 export → verify `leads.xlsx` opens correctly
+3. **D11**: Review enrichment results against the 7 sample scenarios in the spec
+4. **G4**: Update `docs/agent/AGENT.md` and docs with final state
 
-Do not implement SMTP as a binary truth oracle.
+### Required User Action
 
-Required behavior:
+To run the real integration test (G3), the following must be available:
+- gosom Docker container running in REST mode (`docker run -p 8080:8080 gosom/google-maps-scraper`)
+- `COMPANIES_HOUSE_API_KEY` set in `.env`
+- `GROQ_API_KEY` set in `.env`
+- App running: `python main.py` or `uvicorn main:app --port 3000`
 
-- 1 probe/second global cap
-- 5 second backoff on refusal/disconnect
-- no same-run retries for one address
-- tri-state result: true / false / unverifiable
-- confidence is reduced on SMTP block, not dropped to invalid
-
-### Companies House matching
-
-Do not implement naive fuzzy matching.
-
-Required behavior:
-
-- normalized exact match first
-- postcode/domain-supported narrowing
-- conservative fuzzy fallback only after stronger methods fail
-- explicit `match_method` and `match_confidence`
-- ambiguous cases remain unmatched
+The user must action this environment setup before G3 can be completed.
 
 ---
 
@@ -111,66 +93,27 @@ Required behavior:
 
 Use `docs/ops/IMPLEMENTATION-TASK-LIST.md` as the working task plan.
 
-That file is now the practical build order and acceptance checklist for agents.
-
 ## Git And Documentation Rule
 
 When work is completed:
-
 - update the relevant docs in `docs/`
 - commit with clear action, reason, and decision context
 - push the checkpoint to GitHub unless the user says otherwise
 
 ---
 
-## Required First Actions Next Session
-
-1. Complete `C1` — gosom REST client wiring.
-2. Complete `C2` — coverage cell model and queue logic.
-3. Complete `C3` — lead ingestion and dedup.
-4. Complete `C4` — coverage endpoints.
-5. Complete `C5` — Phase 1 UI binding to live coverage data.
-6. Stand up gosom locally and prove a single REST cell run works.
-7. Complete `C6` before beginning Phase 2 implementation.
-8. Build deterministic Phase 2 extraction before Groq fallback.
-9. Build Companies House matching and SMTP verification conservatively.
-10. Complete Phase 3 export.
-11. Run tests and one live end-to-end sample project.
-12. Update docs/logs based on real implementation results.
-
----
-
-## Definition of "Ready To Continue"
-
-The next session should proceed directly into implementation if the user says `continue`.
-
-There should be no need to:
-
-- revisit architecture
-- re-decide the stack
-- re-scope v1
-- redesign phases
-- argue about API shape
-- argue about UI framework
-
-The remaining work is execution and verification from `Track C` onward.
-
----
-
 ## Final Instruction For The Next Agent
 
-Build to the existing contract and continue from the scaffold already in the workspace.
+The v1 code build is complete. The remaining work is **validation and environment bring-up**, not more coding.
 
-Do not read `archive/` unless explicitly asked.
-Do not implement deferred phases.
-Do not widen the schema for speculative future features.
-Do not over-trust SMTP failures.
-Do not over-trust loose Companies House matches.
+Do not:
+- add new features
+- widen the Phase 2 schema
+- implement Phase 4 or 5
+- change the export format
 
-If tradeoffs are required, bias toward:
-
-- resumability
-- observability
-- conservative data correctness
-- not attaching wrong company/person data
-- not discarding potentially valid emails because a mail server is hostile
+Do:
+- help the user get gosom + API keys set up
+- run G3 (real end-to-end test)
+- review D11 Phase 2 verification scenarios
+- update docs after real run results are known
