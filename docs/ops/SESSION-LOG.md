@@ -3,6 +3,36 @@
 
 ---
 
+## 2026-06-01 — Fourteenth implementation session: full v1 build complete
+
+Continued from D10 and completed all remaining v1 tasks in a single session.
+
+**D11 — Phase 2 verification suite:**
+- Created `tests/test_phase2_verification_suite.py` with 9 named tests covering all 7 spec scenarios: (S1) obvious homepage email, (S2) contact-page-only email, (S3) AI fallback with evidence / rejection of unevidenced output, (S4) dead domain without crash, (S5) SMTP-unverifiable preserves MX-based confidence, (S6) locality-stripped trading name matched to CH registered name, (S7) ambiguous candidates return None
+
+**F1+F2 — Full pipeline orchestration and run logging:**
+- Moved `run_full_pipeline()` to module level for testability
+- Chains Phase 1 → 2 → 3 with per-phase `pipeline_runs` rows
+- `POST /api/projects/{id}/run`, `/stop`, `GET /runs`
+- `pipeline_runs` table tracked with `start_pipeline_run()` / `complete_pipeline_run()` / `list_pipeline_runs()`
+- 8 tests pass
+
+**E1–E6 — Phase 3 output (completed earlier this session):**
+- `bulk_postcode_lookup()`: batches up to 100 per Postcodes.io request
+- `normalise_uk_phone()`: E.164 via phonenumbers; None-safe; returns original on failure
+- `confirm_no_duplicate_cids()`: safety check; schema prevents duplicates at DB level
+- `export_leads_xlsx()`: 18-column XLSX with styled header row, bulk postcodes before loop, marks leads done after write
+- `run_phase3()`: checkpoint/resume runner; 4 REST endpoints
+- 23 tests pass
+
+**Total tests written this session: 95** across D5–D11, E1–E6, F1–F2. All pass.
+
+**All commits pushed to GitHub** (commits e9481ec through 8dd0be5).
+
+**Finish point for this session:** The v1 code build is **complete**. All phases (1, 2, 3) are implemented, test-green, and pushed. The only remaining work is validation/ops: G1 (environment bring-up with live gosom + API keys), G3 (real end-to-end integration test), and documentation closeout. These require user action to set up the live environment.
+
+---
+
 ## 2026-06-01 — Thirteenth implementation session: D6–D10 completed, Phase 2 fully implemented
 
 Continued from D5 and completed the remaining Phase 2 track in a single session.
