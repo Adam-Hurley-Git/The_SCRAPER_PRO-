@@ -1,0 +1,151 @@
+<div class="stack">
+
+  {# ─── Phase 1: Discovery ─────────────────────────────────────── #}
+  <article class="phase-card">
+    <div class="phase-card-header">
+      <div>
+        <p class="eyebrow">Phase 1</p>
+        <h4>Discovery</h4>
+      </div>
+      {% if active_project %}
+      <button class="ghost-button" type="button"
+              hx-post="/api/projects/{{ active_project.id }}/coverage/start"
+              hx-swap="none">
+        Run
+      </button>
+      {% endif %}
+    </div>
+    {% if active_project and coverage_status is defined %}
+    <progress class="phase-progress" value="{{ coverage_status.completion_percent }}" max="100"></progress>
+    <p>
+      Cells: {{ coverage_status.cells_completed }} complete,
+      {{ coverage_status.cells_running }} running,
+      {{ coverage_status.cells_pending }} queued,
+      {{ coverage_status.cells_failed }} failed.
+      Leads found: <strong>{{ coverage_status.leads_found }}</strong>.
+      Progress: {{ coverage_status.completion_percent }}%.
+      {% if coverage_status.coverage_complete %}<em>Coverage complete.</em>{% endif %}
+    </p>
+    {% else %}
+    <p>No active project selected.</p>
+    {% endif %}
+  </article>
+
+  {# ─── Phase 2: Enrichment ─────────────────────────────────────── #}
+  <article class="phase-card">
+    <div class="phase-card-header">
+      <div>
+        <p class="eyebrow">Phase 2</p>
+        <h4>Enrichment</h4>
+      </div>
+      {% if active_project %}
+      <div style="display:flex;gap:.5rem;">
+        <button class="ghost-button" type="button"
+                hx-post="/api/projects/{{ active_project.id }}/phases/2/run"
+                hx-swap="none">
+          Run
+        </button>
+        <button class="ghost-button" type="button"
+                hx-post="/api/projects/{{ active_project.id }}/phases/2/resume"
+                hx-swap="none">
+          Resume
+        </button>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if active_project and phase2_status is defined %}
+    {% set total = phase2_status.total_leads %}
+
+    {# Website stage #}
+    {% set ws = phase2_status.website_status %}
+    {% set ws_done = ws.get('done', 0) %}
+    {% set ws_fail = ws.get('failed', 0) %}
+    {% set ws_run  = ws.get('running', 0) %}
+    {% set ws_pct  = ((ws_done / total) * 100) | int if total > 0 else 0 %}
+    <details>
+      <summary>
+        <strong>Website extraction</strong>
+        — {{ ws_done }}/{{ total }} done{% if ws_fail %}, <span class="fail-count">{{ ws_fail }} failed</span>{% endif %}
+        {% if ws_run %}<span class="running-badge">{{ ws_run }} running</span>{% endif %}
+      </summary>
+      <progress class="phase-progress" value="{{ ws_pct }}" max="100"></progress>
+      {% if ws_fail and active_project %}
+      <button class="ghost-button small" type="button"
+              hx-post="/api/projects/{{ active_project.id }}/phases/2/retry"
+              hx-vals='{"stage":"website"}'
+              hx-swap="none">
+        Retry {{ ws_fail }} failed
+      </button>
+      {% endif %}
+    </details>
+
+    {# Companies House stage #}
+    {% set cs = phase2_status.companies_house_status %}
+    {% set cs_done = cs.get('done', 0) %}
+    {% set cs_fail = cs.get('failed', 0) %}
+    {% set cs_run  = cs.get('running', 0) %}
+    {% set cs_pct  = ((cs_done / total) * 100) | int if total > 0 else 0 %}
+    <details>
+      <summary>
+        <strong>Companies House</strong>
+        — {{ cs_done }}/{{ total }} done{% if cs_fail %}, <span class="fail-count">{{ cs_fail }} failed</span>{% endif %}
+        {% if cs_run %}<span class="running-badge">{{ cs_run }} running</span>{% endif %}
+      </summary>
+      <progress class="phase-progress" value="{{ cs_pct }}" max="100"></progress>
+      {% if cs_fail and active_project %}
+      <button class="ghost-button small" type="button"
+              hx-post="/api/projects/{{ active_project.id }}/phases/2/retry"
+              hx-vals='{"stage":"companies_house"}'
+              hx-swap="none">
+        Retry {{ cs_fail }} failed
+      </button>
+      {% endif %}
+    </details>
+
+    {# SMTP stage #}
+    {% set ss = phase2_status.smtp_status %}
+    {% set ss_done = ss.get('done', 0) %}
+    {% set ss_fail = ss.get('failed', 0) %}
+    {% set ss_run  = ss.get('running', 0) %}
+    {% set ss_pct  = ((ss_done / total) * 100) | int if total > 0 else 0 %}
+    <details>
+      <summary>
+        <strong>SMTP verification</strong>
+        — {{ ss_done }}/{{ total }} done{% if ss_fail %}, <span class="fail-count">{{ ss_fail }} failed</span>{% endif %}
+        {% if ss_run %}<span class="running-badge">{{ ss_run }} running</span>{% endif %}
+      </summary>
+      <progress class="phase-progress" value="{{ ss_pct }}" max="100"></progress>
+      {% if ss_fail and active_project %}
+      <button class="ghost-button small" type="button"
+              hx-post="/api/projects/{{ active_project.id }}/phases/2/retry"
+              hx-vals='{"stage":"smtp"}'
+              hx-swap="none">
+        Retry {{ ss_fail }} failed
+      </button>
+      {% endif %}
+    </details>
+
+    {# Outreach-ready summary #}
+    {% if total > 0 %}
+    <p style="margin-top:.5rem">
+      Total leads: <strong>{{ total }}</strong>.
+      Outreach-ready: awaiting export phase.
+    </p>
+    {% endif %}
+
+    {% else %}
+    <p>Run Phase 1 first to generate leads for enrichment.</p>
+    {% endif %}
+  </article>
+
+  {# ─── Phase 3: Output ─────────────────────────────────────────── #}
+  <article class="phase-card">
+    <div>
+      <p class="eyebrow">Phase 3</p>
+      <h4>Output</h4>
+    </div>
+    <p>Export available after Phase 2 enrichment completes. Run Phase 3 to generate <code>leads.xlsx</code>.</p>
+  </article>
+
+</div>

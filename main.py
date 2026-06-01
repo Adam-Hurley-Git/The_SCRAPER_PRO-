@@ -226,10 +226,9 @@ def create_app(settings_override: AppSettings | None = None) -> FastAPI:
     ) -> HTMLResponse:
         context = shell_context(request, "pipeline", project_id)
         if context["active_project"]:
-            context["coverage_status"] = get_coverage_status(
-                context["active_project"]["id"],
-                settings.scraper_db_path,
-            )
+            pid = context["active_project"]["id"]
+            context["coverage_status"] = get_coverage_status(pid, settings.scraper_db_path)
+            context["phase2_status"] = get_phase2_status(pid, settings.scraper_db_path)
         return templates.TemplateResponse("ui_pipeline.html", context)
 
     @app.get("/ui/pipeline-status", response_class=HTMLResponse)
@@ -239,10 +238,9 @@ def create_app(settings_override: AppSettings | None = None) -> FastAPI:
     ) -> HTMLResponse:
         context = shell_context(request, "pipeline", project_id)
         if context["active_project"]:
-            context["coverage_status"] = get_coverage_status(
-                context["active_project"]["id"],
-                settings.scraper_db_path,
-            )
+            pid = context["active_project"]["id"]
+            context["coverage_status"] = get_coverage_status(pid, settings.scraper_db_path)
+            context["phase2_status"] = get_phase2_status(pid, settings.scraper_db_path)
         return templates.TemplateResponse("partials/pipeline_status.html", context)
 
     @app.get("/ui/leads", response_class=HTMLResponse)
