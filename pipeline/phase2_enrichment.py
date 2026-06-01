@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import smtplib
+import time as _time_module
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
@@ -19,13 +21,17 @@ except ImportError:  # pragma: no cover - optional dependency in local env
 
 from database import (
     claim_next_pending_companies_house_lead,
+    claim_next_pending_smtp_lead,
     claim_next_pending_website_lead,
     count_pending_companies_house_leads,
+    count_pending_smtp_leads,
     count_pending_website_leads,
     mark_lead_website_failed,
     reset_running_companies_house_leads,
+    reset_running_smtp_leads,
     reset_running_website_leads,
     update_lead_companies_house_enrichment,
+    update_lead_smtp_enrichment,
     update_lead_website_enrichment,
 )
 from config import get_settings
@@ -1680,4 +1686,197 @@ def run_companies_house_stage(
         "processed": processed,
         "failed": failed,
         "remaining": count_pending_companies_house_leads(project_id, db_path),
+    }
+
+
+# ---------------------------------------------------------------------------
+# SMTP verification stage
+# ---------------------------------------------------------------------------
+
+_SMTP_MIN_INTERVAL: float = 1.0  # seconds between probes globally
+_last_smtp_probe: float = 0.0    # module-level monotonic clock tracking
+
+
+def _smtp_rate_limit() -> None:
+    """Block until at least _SMTP_MIN_INTERVAL seconds have passed since the last probe."""
+    global _last_smtp_probe
+    elapsed = _time_module.monotonic() - _last_smtp_probe
+    if elapsed < _SMTP_MIN_INTERVAL:
+        _time_module.sleep(_SMTP_MIN_INTERVAL - elapsed)
+    _last_smtp_probe = _time_module.monotonic()
+
+
+def _resolve_mx_host(domain: str) -> str | None:
+    """Return the highest-priority MX hostname for domain, or None if unavailable."""
+    try:
+        import dns.resolver  # type: ignore
+        answers = sorted(dns.resolver.resolve(domain, "MX"), key=lambda r: r.preference)
+        if not answers:
+            return None
+        return str(answers[0].exchange).rstrip(".")
+    except Exception:
+        return None
+
+
+SmtpResult = Literal["smtp_verified_true", "smtp_verified_false", "smtp_unverifiable"]
+
+
+def smtp_probe_email(
+    email: str,
+    *,
+    timeout: float = 10.0,
+    helo_domain: str = "scraper-probe.local",
+) -> SmtpResult:
+    """Probe a single email address via SMTP RCPT TO handshake.
+
+    Rate-limited to _SMTP_MIN_INTERVAL seconds globally.
+    Returns one of smtp_verified_true / smtp_verified_false / smtp_unverifiable.
+    Never raises — all exceptions are absorbed into smtp_unverifiable.
+    """
+    _smtp_rate_limit()
+
+    if "@" not in email:
+        return "smtp_unverifiable"
+
+    domain = email.split("@", 1)[1].lower()
+    mx_host = _resolve_mx_host(domain)
+    if not mx_host:
+        return "smtp_unverifiable"
+
+    try:
+        with smtplib.SMTP(timeout=timeout) as smtp:
+            smtp.connect(mx_host, 25)
+            smtp.ehlo(helo_domain)
+            # Some servers support VRFY; most honour RCPT TO in a dummy transaction
+            smtp.mail("")
+            code, _ = smtp.rcpt(email)
+            smtp.rset()
+            if code == 250:
+                return "smtp_verified_true"
+            elif code in {550, 551, 553}:
+                return "smtp_verified_false"
+            else:
+                return "smtp_unverifiable"
+    except (smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected, ConnectionRefusedError, OSError):
+        # Connection-level failure → backoff then unverifiable (not a verdict on the address)
+        _time_module.sleep(5.0)
+        return "smtp_unverifiable"
+    except Exception:
+        return "smtp_unverifiable"
+
+
+def apply_smtp_verification(
+    *,
+    record: EnrichmentRecord,
+    probed_addresses: set[str],
+    smtp_prober: Any | None = None,
+) -> tuple[EnrichmentRecord, str, set[str]]:
+    """Run SMTP probes for all unverified emails on a lead.
+
+    Returns (updated_record, smtp_status, updated_probed_addresses).
+    smtp_status is 'done' when all addresses were processed (even if unverifiable),
+    'failed' only if an unexpected exception aborts the whole lead.
+
+    Rules:
+    - Never probe an address already in probed_addresses (no same-run retry).
+    - smtp_verified_true  → confidence 'high',  smtp_verified = True
+    - smtp_verified_false → confidence 'low',   smtp_verified = False
+    - smtp_unverifiable   → keep existing confidence (MX-based medium preserved)
+    """
+    active_prober = smtp_prober if smtp_prober is not None else smtp_probe_email
+
+    for email in record.emails:
+        if email.address in probed_addresses:
+            continue
+        probed_addresses.add(email.address)
+
+        result: SmtpResult = active_prober(email.address)
+        email.smtp_result = result
+
+        if result == "smtp_verified_true":
+            email.smtp_verified = True
+            email.confidence = "high"
+        elif result == "smtp_verified_false":
+            email.smtp_verified = False
+            # Downgrade but don't wipe — the address might still be a role inbox
+            if email.confidence in {"high", "very_high"}:
+                email.confidence = "medium"
+            else:
+                email.confidence = "low"
+        else:
+            # smtp_unverifiable — preserve existing MX-based confidence
+            email.smtp_verified = None
+
+    return record, "done", probed_addresses
+
+
+def run_smtp_stage(
+    project_id: str,
+    *,
+    db_path: str,
+    smtp_prober: Any | None = None,
+    batch_limit: int = 25,
+) -> dict[str, Any]:
+    """Run the SMTP verification stage for a project.
+
+    Resets stranded running leads, then claims and processes up to batch_limit leads.
+    A module-level set tracks probed addresses so the same address is never probed
+    twice within one call to this function.
+    """
+    reset_running_smtp_leads(project_id, db_path)
+
+    probed_addresses: set[str] = set()
+    processed = 0
+    failed = 0
+    claimed = 0
+
+    while claimed < batch_limit:
+        lead = claim_next_pending_smtp_lead(project_id, db_path)
+        if lead is None:
+            break
+        claimed += 1
+
+        raw_enrichment = lead.get("enrichment_data")
+        if not raw_enrichment:
+            update_lead_smtp_enrichment(
+                lead_id=lead["id"],
+                enrichment_data={},
+                smtp_status="failed",
+                db_path=db_path,
+            )
+            failed += 1
+            continue
+
+        try:
+            enrichment_data = json.loads(raw_enrichment) if isinstance(raw_enrichment, str) else raw_enrichment
+            record = EnrichmentRecord.model_validate(enrichment_data)
+
+            record, smtp_status, probed_addresses = apply_smtp_verification(
+                record=record,
+                probed_addresses=probed_addresses,
+                smtp_prober=smtp_prober,
+            )
+            update_lead_smtp_enrichment(
+                lead_id=lead["id"],
+                enrichment_data=record.model_dump(mode="json"),
+                smtp_status=smtp_status,
+                db_path=db_path,
+            )
+            processed += 1
+        except Exception:
+            update_lead_smtp_enrichment(
+                lead_id=lead["id"],
+                enrichment_data=json.loads(raw_enrichment) if isinstance(raw_enrichment, str) else {},
+                smtp_status="failed",
+                db_path=db_path,
+            )
+            failed += 1
+
+    return {
+        "project_id": project_id,
+        "phase": "2",
+        "stage": "smtp_verification",
+        "processed": processed,
+        "failed": failed,
+        "remaining": count_pending_smtp_leads(project_id, db_path),
     }

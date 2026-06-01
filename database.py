@@ -699,6 +699,121 @@ def retry_failed_companies_house_leads(project_id: str, db_path: str | Path | No
     return cursor.rowcount
 
 
+def reset_running_smtp_leads(project_id: str, db_path: str | Path | None = None) -> int:
+    with get_connection(db_path) as conn:
+        cursor = conn.execute(
+            """
+            UPDATE leads
+            SET smtp_status = 'pending',
+                last_updated = ?
+            WHERE project_id = ? AND smtp_status = 'running'
+            """,
+            (utc_now_iso(), project_id),
+        )
+        conn.commit()
+    return cursor.rowcount
+
+
+def claim_next_pending_smtp_lead(
+    project_id: str,
+    db_path: str | Path | None = None,
+) -> dict[str, Any] | None:
+    with get_connection(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            """
+            SELECT *
+            FROM leads
+            WHERE project_id = ?
+              AND website_status = 'done'
+              AND smtp_status IN ('pending', 'retry')
+            ORDER BY last_updated ASC, id ASC
+            LIMIT 1
+            """,
+            (project_id,),
+        ).fetchone()
+        if row is None:
+            conn.commit()
+            return None
+        conn.execute(
+            """
+            UPDATE leads
+            SET smtp_status = 'running',
+                last_updated = ?
+            WHERE id = ?
+            """,
+            (utc_now_iso(), row["id"]),
+        )
+        conn.commit()
+        claimed = conn.execute("SELECT * FROM leads WHERE id = ?", (row["id"],)).fetchone()
+    return row_to_dict(claimed)
+
+
+def count_pending_smtp_leads(project_id: str, db_path: str | Path | None = None) -> int:
+    with get_connection(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS lead_count
+            FROM leads
+            WHERE project_id = ?
+              AND website_status = 'done'
+              AND smtp_status IN ('pending', 'retry')
+            """,
+            (project_id,),
+        ).fetchone()
+    return int(row["lead_count"]) if row is not None else 0
+
+
+def update_lead_smtp_enrichment(
+    *,
+    lead_id: str,
+    enrichment_data: dict[str, Any],
+    smtp_status: str,
+    db_path: str | Path | None = None,
+) -> None:
+    outreach = enrichment_data.get("outreach") or {}
+    with get_connection(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE leads
+            SET enrichment_data = ?,
+                smtp_status = ?,
+                primary_email = COALESCE(?, primary_email),
+                primary_phone = COALESCE(?, primary_phone),
+                primary_person = COALESCE(?, primary_person),
+                outreach_ready = ?,
+                last_updated = ?
+            WHERE id = ?
+            """,
+            (
+                json.dumps(enrichment_data),
+                smtp_status,
+                outreach.get("primary_email"),
+                outreach.get("primary_phone"),
+                outreach.get("primary_person"),
+                1 if outreach.get("ready") else 0,
+                utc_now_iso(),
+                lead_id,
+            ),
+        )
+        conn.commit()
+
+
+def retry_failed_smtp_leads(project_id: str, db_path: str | Path | None = None) -> int:
+    with get_connection(db_path) as conn:
+        cursor = conn.execute(
+            """
+            UPDATE leads
+            SET smtp_status = 'retry',
+                last_updated = ?
+            WHERE project_id = ? AND smtp_status = 'failed'
+            """,
+            (utc_now_iso(), project_id),
+        )
+        conn.commit()
+    return cursor.rowcount
+
+
 def mark_lead_website_failed(lead_id: str, db_path: str | Path | None = None) -> None:
     with get_connection(db_path) as conn:
         conn.execute(
